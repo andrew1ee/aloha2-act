@@ -1,0 +1,3 @@
+Thu Mar 14 15:29:00 2024
+WARNING: mju_openResource: unknown file '/Users/andrewlee/_research/guided-vision/act/aloha2/aloha.xml'
+
