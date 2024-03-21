@@ -1,0 +1,39 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python Debugger: record sim episode",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "record_sim_episodes2.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--task_name", "sim_transfer_cube_scripted",
+                "--dataset_dir", "data/test2",
+                "--num_episodes", "1",
+                "--onscreen_render"
+        ]
+        },
+        {
+            "name": "Python Debugger: imitate",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "imitate_episodes.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--task_name", "sim_transfer_cube_scripted",
+                "--ckpt_dir", "runs/sim_transfer_cube_scripted",
+                "--policy_class", "ACT",
+                "--kl_weight", "10",
+                "--chunk_size", "100",
+                "--hidden_dim", "512", 
+                "--batch_size", "8",
+                "--dim_feedforward", "3200",
+                "--num_epochs", "2000",
+                "--lr", "1e-5",
+                "--seed", "0"
+        ]
+        }
+    ]
+}
