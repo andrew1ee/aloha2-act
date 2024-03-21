@@ -53,12 +53,12 @@
     <light pos="0 0.1 2.5"/>
     <geom name="floor" size="2 2 0.05" type="plane" material="groundplane" pos="0 0 -.75"/>
 
-    <body mocap="true" name="mocap_left" pos="0.10 -0.0175 0.455">
+    <body mocap="true" name="mocap_left" pos="0.09 -0.017 0.435">
         <site pos="0 0 0" size="0.003 0.003 0.03" type="box" name="mocap_left_site1" rgba="1 0 0 1"/>
         <site pos="0 0 0" size="0.003 0.03 0.003" type="box" name="mocap_left_site2" rgba="1 0 0 1"/>
         <site pos="0 0 0" size="0.03 0.003 0.003" type="box" name="mocap_left_site3" rgba="1 0 0 1"/>
     </body>
-    <body mocap="true" name="mocap_right" pos="-0.10 -0.0175 0.455">
+    <body mocap="true" name="mocap_right" pos="-0.09 -0.017 0.435">
         <site pos="0 0 0" size="0.003 0.003 0.03" type="box" name="mocap_right_site1" rgba="1 0 0 1"/>
         <site pos="0 0 0" size="0.003 0.03 0.003" type="box" name="mocap_right_site2" rgba="1 0 0 1"/>
         <site pos="0 0 0" size="0.03 0.003 0.003" type="box" name="mocap_right_site3" rgba="1 0 0 1"/>

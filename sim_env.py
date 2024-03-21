@@ -6,11 +6,11 @@ from dm_control import mujoco
 from dm_control.rl import control
 from dm_control.suite import base
 
-from constants2 import DT, XML_DIR, START_ARM_POSE
-from constants2 import PUPPET_GRIPPER_POSITION_UNNORMALIZE_FN
-from constants2 import MASTER_GRIPPER_POSITION_NORMALIZE_FN
-from constants2 import PUPPET_GRIPPER_POSITION_NORMALIZE_FN
-from constants2 import PUPPET_GRIPPER_VELOCITY_NORMALIZE_FN
+from constants import DT, XML_DIR, START_ARM_POSE
+from constants import PUPPET_GRIPPER_POSITION_UNNORMALIZE_FN
+from constants import MASTER_GRIPPER_POSITION_NORMALIZE_FN
+from constants import PUPPET_GRIPPER_POSITION_NORMALIZE_FN
+from constants import PUPPET_GRIPPER_VELOCITY_NORMALIZE_FN
 
 import IPython
 e = IPython.embed
@@ -36,7 +36,7 @@ def make_sim_env(task_name):
                         "images": {"main": (480x640x3)}        # h, w, c, dtype='uint8'
     """
     if 'sim_transfer_cube' in task_name:
-        xml_path = os.path.join(XML_DIR, f'scene_box.xml')
+        xml_path = os.path.join(XML_DIR, f'bimanual_viperx_transfer_cube.xml')
         physics = mujoco.Physics.from_xml_path(xml_path)
         task = TransferCubeTask(random=False)
         env = control.Environment(physics, task, time_limit=20, control_timestep=DT,
@@ -275,4 +275,3 @@ def test_sim_teleop():
 
 if __name__ == '__main__':
     test_sim_teleop()
-
