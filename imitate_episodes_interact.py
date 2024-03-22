@@ -122,16 +122,27 @@ def main(args):
     # save dataset stats
     if not os.path.isdir(ckpt_dir):
         os.makedirs(ckpt_dir)
+    if not os.path.isdir(f'{ckpt_dir}/plots'):
+        os.makedirs(f'{ckpt_dir}/plots')
+    if not os.path.isdir(f'{ckpt_dir}/weights'):
+        os.makedirs(f'{ckpt_dir}/weights')
+    if not os.path.isdir(f'{ckpt_dir}/ckpts/best'):
+        os.makedirs(f'{ckpt_dir}/ckpts/best')
+    if not os.path.isdir(f'{ckpt_dir}/videos'):
+        os.makedirs(f'{ckpt_dir}/videos')
     stats_path = os.path.join(ckpt_dir, f'dataset_stats.pkl')
     with open(stats_path, 'wb') as f:
         pickle.dump(stats, f)
 
-    best_ckpt_info = train_bc(train_dataloader, val_dataloader, config)
-    best_epoch, min_val_loss, best_state_dict = best_ckpt_info
+    best_left_ckpt_info, best_right_ckpt_info = train_bc(train_dataloader, val_dataloader, config)
+    best_epoch, min_val_loss, best_state_left_dict = best_left_ckpt_info
+    best_epoch, min_val_loss, best_state_right_dict = best_right_ckpt_info
 
     # save best checkpoint
-    ckpt_path = os.path.join(ckpt_dir, f'policy_best.ckpt')
-    torch.save(best_state_dict, ckpt_path)
+    ckpt_left_path = os.path.join(ckpt_dir, f'weights/best/policy_best_left.ckpt')
+    torch.save(best_state_left_dict, ckpt_left_path)
+    ckpt_right_path = os.path.join(ckpt_dir, f'weights/best/policy_best_right.ckpt')
+    torch.save(best_state_right_dict, ckpt_right_path)
     print(f'Best ckpt, val loss {min_val_loss:.6f} @ epoch{best_epoch}')
 
 
@@ -204,7 +215,8 @@ def eval_bc(config, ckpt_name, save_episode=True):
         stats = pickle.load(f)
 
     pre_process = lambda s_qpos: (s_qpos - stats['qpos_mean']) / stats['qpos_std']
-    post_process = lambda a: a * stats['action_std'] + stats['action_mean']
+    post_process_left = lambda a: a * stats['action_std'][:7] + stats['action_mean'][:7]
+    post_process_right = lambda a: a * stats['action_std'][7:] + stats['action_mean'][7:]
 
     # load environment
     if real_robot:
@@ -247,7 +259,8 @@ def eval_bc(config, ckpt_name, save_episode=True):
         if temporal_agg:
             all_time_actions = torch.zeros([max_timesteps, max_timesteps+num_queries, state_dim]).cuda()
 
-        qpos_history = torch.zeros((1, max_timesteps, state_dim)).cuda()
+        qpos_left_history = torch.zeros((1, max_timesteps, state_dim)).cuda()
+        qpos_right_history = torch.zeros((1, max_timesteps, state_dim)).cuda()
         image_list = [] # for visualization
         qpos_list = []
         target_qpos_list = []
@@ -269,7 +282,10 @@ def eval_bc(config, ckpt_name, save_episode=True):
                 qpos_numpy = np.array(obs['qpos'])
                 qpos = pre_process(qpos_numpy)
                 qpos = torch.from_numpy(qpos).float().cuda().unsqueeze(0)
-                qpos_history[:, t] = qpos
+                qpos_left = qpos[:,:7]
+                qpos_right = qpos[:,7:]
+                qpos_left_history[:, t] = qpos_left
+                qpos_right_history[:, t] = qpos_right
                 curr_image = get_image(ts, camera_names)
 
                 ### query policy
@@ -290,8 +306,8 @@ def eval_bc(config, ckpt_name, save_episode=True):
                         raw_action = all_actions[:, t % query_frequency]
                 if config['policy_class'] == "InterACT":
                     if t % query_frequency == 0:
-                        all_left_actions = policy_left(qpos, curr_image)
-                        all_right_actions = policy_right(qpos, curr_image)
+                        all_left_actions = policy_left(qpos_left, curr_image)
+                        all_right_actions = policy_right(qpos_right, curr_image)
                     if temporal_agg:
                         all_time_actions[[t], t:t+num_queries] = all_actions
                         actions_for_curr_step = all_time_actions[:, t]
@@ -303,16 +319,19 @@ def eval_bc(config, ckpt_name, save_episode=True):
                         exp_weights = torch.from_numpy(exp_weights).cuda().unsqueeze(dim=1)
                         raw_action = (actions_for_curr_step * exp_weights).sum(dim=0, keepdim=True)
                     else:
-                        raw_action = all_actions[:, t % query_frequency]
+                        raw_action_left = all_left_actions[:, t % query_frequency]
+                        raw_action_right = all_right_actions[:, t % query_frequency]
                 elif config['policy_class'] == "CNNMLP":
                     raw_action = policy(qpos, curr_image)
                 else:
                     raise NotImplementedError
 
                 ### post-process actions
-                raw_action = raw_action.squeeze(0).cpu().numpy()
-                action = post_process(raw_action)
-                target_qpos = action
+                raw_action_left = raw_action_left.squeeze(0).cpu().numpy()
+                raw_action_right = raw_action_right.squeeze(0).cpu().numpy()
+                action_left = post_process_left(raw_action_left)
+                action_right = post_process_right(raw_action_right)
+                target_qpos = np.concatenate([action_left, action_right])
 
                 ### step the environment
                 ts = env.step(target_qpos)
@@ -335,7 +354,7 @@ def eval_bc(config, ckpt_name, save_episode=True):
         print(f'Rollout {rollout_id}\n{episode_return=}, {episode_highest_reward=}, {env_max_reward=}, Success: {episode_highest_reward==env_max_reward}')
 
         if save_episode:
-            save_videos(image_list, DT, video_path=os.path.join(ckpt_dir, f'video{rollout_id}.mp4'))
+            save_videos(image_list, DT, video_path=os.path.join(ckpt_dir, f'videos/video{rollout_id}.mp4'))
 
     success_rate = np.mean(np.array(highest_rewards) == env_max_reward)
     avg_return = np.mean(episode_returns)
@@ -348,7 +367,7 @@ def eval_bc(config, ckpt_name, save_episode=True):
     print(summary_str)
 
     # save success rate to txt
-    result_file_name = 'result_' + ckpt_name.split('.')[0] + '.txt'
+    result_file_name = 'result_' + ckpt_name[0].split('.')[0] + '.txt'
     with open(os.path.join(ckpt_dir, result_file_name), 'w') as f:
         f.write(summary_str)
         f.write(repr(episode_returns))
@@ -402,45 +421,9 @@ def train_bc(train_dataloader, val_dataloader, config):
     min_val_loss = np.inf
     best_ckpt_info = None
     for epoch in tqdm(range(num_epochs)):
-        print(f'\nEpoch {epoch}')
+        tqdm.write(f'\nEpoch {epoch}')
         # validation
-        if epoch > 0:
-            with torch.inference_mode():
-                policy_left.eval()
-                policy_right.eval()
-
-                epoch_left_dicts = []
-                epoch_right_dicts = []
-                for batch_idx, data in enumerate(val_dataloader):
-                    if epoch > 0:  # Skip feedback only for the first epoch
-                        feedback_from_left = extract_feedback(left_ahat, which='left')
-                        feedback_from_right = extract_feedback(left_ahat, which='right')
-                    else:
-                        feedback_left = feedback_right = None  # No feedback for the first epoch
-                    forward_dict_left, left_ahat = forward_pass(data, policy_left, which='left', feedback=feedback_right) ## DATA 나눠야함
-                    forward_dict_right, right_ahat = forward_pass(data, policy_left, which='right', feedback=feedback_left)
-                    epoch_left_dicts.append(forward_dict_left)
-                    epoch_right_dicts.append(forward_dict_right)
-
-                epoch_left_summary = compute_dict_mean(epoch_left_dicts)
-                epoch_right_summary  = compute_dict_mean(epoch_right_dicts)
-                validation_left_history.append(epoch_left_summary)
-                validation_right_history.append(epoch_right_summary)
-
-                epoch_val_loss = epoch_left_summary['loss'] + epoch_right_summary['loss']
-                
-                if epoch_val_loss < min_val_loss:
-                    min_val_loss = epoch_val_loss
-                    best_left_ckpt_info = (epoch, min_val_loss, deepcopy(policy_left.state_dict()))
-                    best_right_ckpt_info = (epoch, min_val_loss, deepcopy(policy_right.state_dict()))
-            print(f'Val loss:   {epoch_val_loss:.5f}')
-            summary_string = ''
-            for k, v in epoch_left_summary.items():
-                summary_string += f'LEFT: {k}: {v.item():.3f} '
-            summary_string += '\n'
-            for k, v in epoch_right_summary.items():
-                summary_string += f'RIGHT: {k}: {v.item():.3f} '
-            print(summary_string)
+        
 
         # training
         policy_left.train()
@@ -476,47 +459,88 @@ def train_bc(train_dataloader, val_dataloader, config):
         epoch_right_summary = compute_dict_mean(train_right_history[(batch_idx+1)*epoch:(batch_idx+1)*(epoch+1)])
 
         epoch_train_loss = epoch_left_summary['loss'] + epoch_right_summary['loss']
-        print(f'Train loss: {epoch_train_loss:.5f}')
+        tqdm.write(f'Train loss: {epoch_train_loss:.5f}')
         summary_string = ''
         for k, v in epoch_left_summary.items():
             summary_string += f'LEFT: {k}: {v.item():.3f} '
         summary_string += '\n'    
         for k, v in epoch_right_summary.items():
             summary_string += f'RIGHT: {k}: {v.item():.3f} '
-        print(summary_string)
+        tqdm.write(summary_string)
+
+        
+        # if epoch > 0:
+        with torch.inference_mode():
+            policy_left.eval()
+            policy_right.eval()
+
+            epoch_left_dicts = []
+            epoch_right_dicts = []
+            for batch_idx, data in enumerate(val_dataloader):
+                if epoch > 0:  # Skip feedback only for the first epoch
+                    feedback_from_left = extract_feedback(left_ahat, which='left')
+                    feedback_from_right = extract_feedback(left_ahat, which='right')
+                else:
+                    feedback_left = feedback_right = None  # No feedback for the first epoch
+                forward_dict_left, left_ahat = forward_pass(data, policy_left, which='left', feedback=feedback_right) ## DATA 나눠야함
+                forward_dict_right, right_ahat = forward_pass(data, policy_left, which='right', feedback=feedback_left)
+                epoch_left_dicts.append(forward_dict_left)
+                epoch_right_dicts.append(forward_dict_right)
+
+            epoch_left_summary = compute_dict_mean(epoch_left_dicts)
+            epoch_right_summary  = compute_dict_mean(epoch_right_dicts)
+            validation_left_history.append(epoch_left_summary)
+            validation_right_history.append(epoch_right_summary)
+
+            epoch_val_loss = epoch_left_summary['loss'] + epoch_right_summary['loss']
+            
+            if epoch_val_loss < min_val_loss:
+                min_val_loss = epoch_val_loss
+                best_left_ckpt_info = (epoch, min_val_loss, deepcopy(policy_left.state_dict()))
+                best_right_ckpt_info = (epoch, min_val_loss, deepcopy(policy_right.state_dict()))
+        tqdm.write(f'Val loss:   {epoch_val_loss:.5f}')
+        summary_string = ''
+        for k, v in epoch_left_summary.items():
+            summary_string += f'LEFT: {k}: {v.item():.3f} '
+        summary_string += '\n'
+        for k, v in epoch_right_summary.items():
+            summary_string += f'RIGHT: {k}: {v.item():.3f} '
+        tqdm.write(summary_string)
 
         if epoch % 10 == 0:
             plot_history(train_left_history, validation_left_history, epoch, ckpt_dir, seed, 'left')
             plot_history(train_right_history, validation_right_history, epoch, ckpt_dir, seed, 'right')
         if epoch % 100 == 0:
-            ckpt_left_path = os.path.join(ckpt_dir, f'policy_left_epoch_{epoch}_seed_{seed}.ckpt')
-            ckpt_right_path = os.path.join(ckpt_dir, f'policy_right_epoch_{epoch}_seed_{seed}.ckpt')
+            ckpt_left_path = os.path.join(ckpt_dir, f'weights/policy_left_epoch_{epoch}_seed_{seed}.ckpt')
+            ckpt_right_path = os.path.join(ckpt_dir, f'weights/policy_right_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy_left.state_dict(), ckpt_left_path)
             torch.save(policy_right.state_dict(), ckpt_right_path)
+        
 
-    ckpt_left_path = os.path.join(ckpt_dir, f'policy_left_last.ckpt')
-    ckpt_right_path = os.path.join(ckpt_dir, f'policy_right_last.ckpt')
+    ckpt_left_path = os.path.join(ckpt_dir, f'weights/policy_left_last.ckpt')
+    ckpt_right_path = os.path.join(ckpt_dir, f'weights/policy_right_last.ckpt')
     torch.save(policy_left.state_dict(), ckpt_left_path)
     torch.save(policy_right.state_dict(), ckpt_right_path)
 
-    best_epoch, min_val_loss, best_state_dict = best_ckpt_info
-    ckpt_left_path = os.path.join(ckpt_dir, f'policy_left_epoch_{best_epoch}_seed_{seed}.ckpt')
-    ckpt_right_path = os.path.join(ckpt_dir, f'policy_left_epoch_{best_epoch}_seed_{seed}.ckpt')
-    torch.save(best_state_dict, ckpt_left_path)
-    torch.save(best_state_dict, ckpt_right_path)
+    best_epoch, min_val_loss, best_state_left_dict = best_left_ckpt_info
+    best_epoch, min_val_loss, best_state_right_dict = best_right_ckpt_info
+    ckpt_left_path = os.path.join(ckpt_dir, f'weights/policy_left_epoch_{best_epoch}_seed_{seed}.ckpt')
+    ckpt_right_path = os.path.join(ckpt_dir, f'weights/policy_right_epoch_{best_epoch}_seed_{seed}.ckpt')
+    torch.save(best_state_left_dict, ckpt_left_path)
+    torch.save(best_state_right_dict, ckpt_right_path)
     print(f'Training finished:\nSeed {seed}, val loss {min_val_loss:.6f} at epoch {best_epoch}')
 
     # save training curves
     plot_history(train_left_history, validation_left_history, num_epochs, ckpt_dir, seed, 'left')
     plot_history(train_right_history, validation_right_history, num_epochs, ckpt_dir, seed, 'right')
 
-    return best_ckpt_info
+    return best_left_ckpt_info, best_right_ckpt_info
 
 
 def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed, which):
     # save training curves
     for key in train_history[0]:
-        plot_path = os.path.join(ckpt_dir, f'train_val_{which}_{key}_seed_{seed}.png')
+        plot_path = os.path.join(ckpt_dir, f'plots/train_val_{which}_{key}_seed_{seed}.png')
         plt.figure()
         train_values = [summary[key].item() for summary in train_history]
         val_values = [summary[key].item() for summary in validation_history]
