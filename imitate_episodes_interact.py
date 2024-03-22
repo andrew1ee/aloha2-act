@@ -106,7 +106,7 @@ def main(args):
     }
 
     if is_eval:
-        ckpt_names = [['policy_left_epoch_200_seed_0.ckpt', 'policy_right_epoch_200_seed_0.ckpt']]
+        ckpt_names = [['policy_left_epoch_1000_seed_0.ckpt', 'policy_right_epoch_1000_seed_0.ckpt']]
         results = []
         for ckpt_name in ckpt_names:
             success_rate, avg_return = eval_bc(config, ckpt_name, save_episode=True)
@@ -500,8 +500,10 @@ def train_bc(train_dataloader, val_dataloader, config):
     torch.save(policy_right.state_dict(), ckpt_right_path)
 
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
-    ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{best_epoch}_seed_{seed}.ckpt')
-    torch.save(best_state_dict, ckpt_path)
+    ckpt_left_path = os.path.join(ckpt_dir, f'policy_left_epoch_{best_epoch}_seed_{seed}.ckpt')
+    ckpt_right_path = os.path.join(ckpt_dir, f'policy_left_epoch_{best_epoch}_seed_{seed}.ckpt')
+    torch.save(best_state_dict, ckpt_left_path)
+    torch.save(best_state_dict, ckpt_right_path)
     print(f'Training finished:\nSeed {seed}, val loss {min_val_loss:.6f} at epoch {best_epoch}')
 
     # save training curves
