@@ -50,7 +50,7 @@ class InterACTPolicy(nn.Module):
         self.kl_weight = args_override['kl_weight']
         print(f'KL Weight {self.kl_weight}')
 
-    def __call__(self, qpos, image, feedback, actions=None, is_pad=None):
+    def __call__(self, qpos, image,  actions=None, feedback=None, is_pad=None):
         env_state = None
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
@@ -61,7 +61,7 @@ class InterACTPolicy(nn.Module):
             actions = actions[:, :self.model.num_queries]
             is_pad = is_pad[:, :self.model.num_queries]
 
-            a_hat, is_pad_hat, (mu, logvar) = self.model(qpos, image, env_state,feedback, actions, is_pad)
+            a_hat, is_pad_hat, (mu, logvar) = self.model(qpos, image, env_state,actions, feedback, is_pad)
             total_kld, dim_wise_kld, mean_kld = kl_divergence(mu, logvar)
             loss_dict = dict()
             all_l1 = F.l1_loss(actions, a_hat, reduction='none')
@@ -69,7 +69,7 @@ class InterACTPolicy(nn.Module):
             loss_dict['l1'] = l1
             loss_dict['kl'] = total_kld[0]
             loss_dict['loss'] = loss_dict['l1'] + loss_dict['kl'] * self.kl_weight
-            return loss_dict
+            return loss_dict, a_hat
         else: # inference time
             a_hat, _, (_, _) = self.model(qpos, image, env_state) # no action, sample from prior
             return a_hat

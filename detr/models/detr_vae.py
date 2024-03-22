@@ -179,13 +179,13 @@ class InterACT_DETRVAE(nn.Module):
         self.feedback_encoder = nn.Linear(7, hidden_dim)
 
         self.latent_proj = nn.Linear(hidden_dim, self.latent_dim*2) # project hidden state to latent std, var
-        self.register_buffer('pos_table', get_sinusoid_encoding_table(1+1+num_queries, hidden_dim)) # [CLS], qpos, a_seq
+        self.register_buffer('pos_table', get_sinusoid_encoding_table(2+1+num_queries, hidden_dim)) # [CLS], qpos, a_seq
 
         # decoder extra parameters
         self.latent_out_proj = nn.Linear(self.latent_dim, hidden_dim) # project latent sample to embedding
         self.additional_pos_embed = nn.Embedding(2, hidden_dim) # learned position embedding for proprio and latent
 
-    def forward(self, qpos, image, env_state, feedback=None, actions=None, is_pad=None):
+    def forward(self, qpos, image, env_state, actions=None, feedback=None, is_pad=None):
         """
         qpos: batch, qpos_dim
         image: batch, num_cam, channel, height, width
@@ -203,13 +203,18 @@ class InterACT_DETRVAE(nn.Module):
             cls_embed = self.cls_embed.weight # (1, hidden_dim)
             cls_embed = torch.unsqueeze(cls_embed, axis=0).repeat(bs, 1, 1) # (bs, 1, hidden_dim)
 
-            feedback_embed = self.feedback_encoder(feedback)
-            feedback_embed = torch.unsqueeze(feedback_embed, axis=1)
+            # feedback_embed = self.feedback_encoder(feedback)
+            if feedback is not None:
+                feedback_embed = self.feedback_encoder(feedback)
+            else:
+                # Handle the None case, e.g., use a tensor of zeros as placeholder
+                feedback_embed = torch.zeros(qpos_embed.size(), device='cuda')
+            # feedback_embed = torch.unsqueeze(feedback_embed, axis=1)
 
             encoder_input = torch.cat([cls_embed, qpos_embed, action_embed, feedback_embed], axis=1) # (bs, seq+1, hidden_dim)
             encoder_input = encoder_input.permute(1, 0, 2) # (seq+1, bs, hidden_dim)
             # do not mask cls token
-            cls_joint_is_pad = torch.full((bs, 2), False).to(qpos.device) # False: not a padding
+            cls_joint_is_pad = torch.full((bs, 3), False).to(qpos.device) # False: not a padding
             is_pad = torch.cat([cls_joint_is_pad, is_pad], axis=1)  # (bs, seq+1)
             # obtain position embedding
             pos_embed = self.pos_table.clone().detach()
@@ -367,7 +372,7 @@ def build_act(args):
     return model
 
 def build_interact(args):
-    state_dim = 14 # TODO hardcode
+    state_dim = 7 # TODO hardcode
 
     # From state
     # backbone = None # from state for now, no need for conv nets
