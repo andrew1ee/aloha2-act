@@ -551,7 +551,7 @@ def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed, 
         plt.legend()
         plt.title(key)
         plt.savefig(plot_path)
-    print(f'Saved plots to {ckpt_dir}')
+    # print(f'Saved plots to {ckpt_dir}')
 
 
 if __name__ == '__main__':
