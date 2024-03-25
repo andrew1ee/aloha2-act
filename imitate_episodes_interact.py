@@ -173,6 +173,26 @@ def make_optimizer(policy_class, policy):
     return optimizer
 
 
+def get_image_left(ts, camera_names):
+    curr_images = []
+    for cam_name in camera_names:
+        if cam_name == 'left_wrist':
+            curr_image = rearrange(ts.observation['images'][cam_name], 'h w c -> c h w')
+            curr_images.append(curr_image)
+    curr_image = np.stack(curr_images, axis=0)
+    curr_image = torch.from_numpy(curr_image / 255.0).float().cuda().unsqueeze(0)
+    return curr_image
+
+def get_image_right(ts, camera_names):
+    curr_images = []
+    for cam_name in camera_names:
+        if cam_name == 'right_wrist':
+            curr_image = rearrange(ts.observation['images'][cam_name], 'h w c -> c h w')
+            curr_images.append(curr_image)
+    curr_image = np.stack(curr_images, axis=0)
+    curr_image = torch.from_numpy(curr_image / 255.0).float().cuda().unsqueeze(0)
+    return curr_image
+
 def get_image(ts, camera_names):
     curr_images = []
     for cam_name in camera_names:
@@ -260,7 +280,9 @@ def eval_bc(config, ckpt_name, save_episode=True):
 
         ### evaluation loop
         if temporal_agg:
-            all_time_actions = torch.zeros([max_timesteps, max_timesteps+num_queries, state_dim]).cuda()
+            # all_time_actions = torch.zeros([max_timesteps, max_timesteps+num_queries, state_dim]).cuda()
+            all_time_left_actions = torch.zeros([max_timesteps, max_timesteps+num_queries, state_dim]).cuda()
+            all_time_right_actions = torch.zeros([max_timesteps, max_timesteps+num_queries, state_dim]).cuda()
 
         qpos_left_history = torch.zeros((1, max_timesteps, state_dim)).cuda()
         qpos_right_history = torch.zeros((1, max_timesteps, state_dim)).cuda()
@@ -289,43 +311,40 @@ def eval_bc(config, ckpt_name, save_episode=True):
                 qpos_right = qpos[:,7:]
                 qpos_left_history[:, t] = qpos_left
                 qpos_right_history[:, t] = qpos_right
-                curr_image = get_image(ts, camera_names)
+                # curr_image = get_image(ts, camera_names)
+                curr_image_left = get_image_left(ts, camera_names)
+                curr_image_right = get_image_right(ts, camera_names)
 
                 ### query policy
-                if config['policy_class'] == "ACT":
-                    if t % query_frequency == 0:
-                        all_actions = policy(qpos, curr_image)
-                    if temporal_agg:
-                        all_time_actions[[t], t:t+num_queries] = all_actions
-                        actions_for_curr_step = all_time_actions[:, t]
-                        actions_populated = torch.all(actions_for_curr_step != 0, axis=1)
-                        actions_for_curr_step = actions_for_curr_step[actions_populated]
-                        k = 0.01
-                        exp_weights = np.exp(-k * np.arange(len(actions_for_curr_step)))
-                        exp_weights = exp_weights / exp_weights.sum()
-                        exp_weights = torch.from_numpy(exp_weights).cuda().unsqueeze(dim=1)
-                        raw_action = (actions_for_curr_step * exp_weights).sum(dim=0, keepdim=True)
-                    else:
-                        raw_action = all_actions[:, t % query_frequency]
                 if config['policy_class'] == "InterACT":
                     if t % query_frequency == 0:
-                        all_left_actions = policy_left(qpos_left, curr_image)
-                        all_right_actions = policy_right(qpos_right, curr_image)
+                        all_left_actions = policy_left(qpos_left, curr_image_left)
+                        all_right_actions = policy_right(qpos_right, curr_image_right)
                     if temporal_agg:
-                        all_time_actions[[t], t:t+num_queries] = all_actions
-                        actions_for_curr_step = all_time_actions[:, t]
-                        actions_populated = torch.all(actions_for_curr_step != 0, axis=1)
-                        actions_for_curr_step = actions_for_curr_step[actions_populated]
+                        # Left
+                        all_time_left_actions[[t], t:t+num_queries] = all_left_actions
+                        left_actions_for_curr_step = all_time_left_actions[:, t]
+                        left_actions_populated = torch.all(left_actions_for_curr_step != 0, axis=1)
+                        left_actions_for_curr_step = left_actions_for_curr_step[left_actions_populated]
                         k = 0.01
-                        exp_weights = np.exp(-k * np.arange(len(actions_for_curr_step)))
-                        exp_weights = exp_weights / exp_weights.sum()
-                        exp_weights = torch.from_numpy(exp_weights).cuda().unsqueeze(dim=1)
-                        raw_action = (actions_for_curr_step * exp_weights).sum(dim=0, keepdim=True)
+                        left_exp_weights = np.exp(-k * np.arange(len(left_actions_for_curr_step)))
+                        left_exp_weights = left_exp_weights / left_exp_weights.sum()
+                        left_exp_weights = torch.from_numpy(left_exp_weights).cuda().unsqueeze(dim=1)
+                        raw_action_left = (left_actions_for_curr_step * left_exp_weights).sum(dim=0, keepdim=True)
+
+                        # Right
+                        all_time_right_actions[[t], t:t+num_queries] = all_right_actions
+                        right_actions_for_curr_step = all_time_right_actions[:, t]
+                        right_actions_populated = torch.all(right_actions_for_curr_step != 0, axis=1)
+                        right_actions_for_curr_step = right_actions_for_curr_step[right_actions_populated]
+                        k = 0.01
+                        right_exp_weights = np.exp(-k * np.arange(len(right_actions_for_curr_step)))
+                        right_exp_weights = right_exp_weights / right_exp_weights.sum()
+                        right_exp_weights = torch.from_numpy(right_exp_weights).cuda().unsqueeze(dim=1)
+                        raw_action_right = (right_actions_for_curr_step * right_exp_weights).sum(dim=0, keepdim=True)
                     else:
                         raw_action_left = all_left_actions[:, t % query_frequency]
                         raw_action_right = all_right_actions[:, t % query_frequency]
-                elif config['policy_class'] == "CNNMLP":
-                    raw_action = policy(qpos, curr_image)
                 else:
                     raise NotImplementedError
 
