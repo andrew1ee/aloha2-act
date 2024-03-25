@@ -124,10 +124,13 @@ def main(args):
         os.makedirs(ckpt_dir)
     if not os.path.isdir(f'{ckpt_dir}/plots'):
         os.makedirs(f'{ckpt_dir}/plots')
+
     if not os.path.isdir(f'{ckpt_dir}/weights'):
         os.makedirs(f'{ckpt_dir}/weights')
-    if not os.path.isdir(f'{ckpt_dir}/ckpts/best'):
-        os.makedirs(f'{ckpt_dir}/ckpts/best')
+
+    if not os.path.isdir(f'{ckpt_dir}/weights/best'):
+        os.makedirs(f'{ckpt_dir}/weights/best')
+
     if not os.path.isdir(f'{ckpt_dir}/videos'):
         os.makedirs(f'{ckpt_dir}/videos')
     stats_path = os.path.join(ckpt_dir, f'dataset_stats.pkl')

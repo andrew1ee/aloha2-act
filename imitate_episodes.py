@@ -105,6 +105,17 @@ def main(args):
     # save dataset stats
     if not os.path.isdir(ckpt_dir):
         os.makedirs(ckpt_dir)
+    if not os.path.isdir(f'{ckpt_dir}/plots'):
+        os.makedirs(f'{ckpt_dir}/plots')
+
+    if not os.path.isdir(f'{ckpt_dir}/weights'):
+        os.makedirs(f'{ckpt_dir}/weights')
+
+    if not os.path.isdir(f'{ckpt_dir}/weights/best'):
+        os.makedirs(f'{ckpt_dir}/weights/best')
+
+    if not os.path.isdir(f'{ckpt_dir}/videos'):
+        os.makedirs(f'{ckpt_dir}/videos')
     stats_path = os.path.join(ckpt_dir, f'dataset_stats.pkl')
     with open(stats_path, 'wb') as f:
         pickle.dump(stats, f)
@@ -113,7 +124,7 @@ def main(args):
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
 
     # save best checkpoint
-    ckpt_path = os.path.join(ckpt_dir, f'policy_best.ckpt')
+    ckpt_path = os.path.join(ckpt_dir, f'weights/best/policy_best.ckpt')
     torch.save(best_state_dict, ckpt_path)
     print(f'Best ckpt, val loss {min_val_loss:.6f} @ epoch{best_epoch}')
 
@@ -290,7 +301,7 @@ def eval_bc(config, ckpt_name, save_episode=True):
         print(f'Rollout {rollout_id}\n{episode_return=}, {episode_highest_reward=}, {env_max_reward=}, Success: {episode_highest_reward==env_max_reward}')
 
         if save_episode:
-            save_videos(image_list, DT, video_path=os.path.join(ckpt_dir, f'video{rollout_id}.mp4'))
+            save_videos(image_list, DT, video_path=os.path.join(ckpt_dir, f'videos/video{rollout_id}.mp4'))
 
     success_rate = np.mean(np.array(highest_rewards) == env_max_reward)
     avg_return = np.mean(episode_returns)
@@ -379,15 +390,15 @@ def train_bc(train_dataloader, val_dataloader, config):
         print(summary_string)
 
         if epoch % 100 == 0:
-            ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
+            ckpt_path = os.path.join(ckpt_dir, f'weights/policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
             plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
 
-    ckpt_path = os.path.join(ckpt_dir, f'policy_last.ckpt')
+    ckpt_path = os.path.join(ckpt_dir, f'weights/policy_last.ckpt')
     torch.save(policy.state_dict(), ckpt_path)
 
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
-    ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{best_epoch}_seed_{seed}.ckpt')
+    ckpt_path = os.path.join(ckpt_dir, f'weights/policy_epoch_{best_epoch}_seed_{seed}.ckpt')
     torch.save(best_state_dict, ckpt_path)
     print(f'Training finished:\nSeed {seed}, val loss {min_val_loss:.6f} at epoch {best_epoch}')
 
@@ -400,7 +411,7 @@ def train_bc(train_dataloader, val_dataloader, config):
 def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
     # save training curves
     for key in train_history[0]:
-        plot_path = os.path.join(ckpt_dir, f'train_val_{key}_seed_{seed}.png')
+        plot_path = os.path.join(ckpt_dir, f'plots/train_val_{key}_seed_{seed}.png')
         plt.figure()
         train_values = [summary[key].item() for summary in train_history]
         val_values = [summary[key].item() for summary in validation_history]
